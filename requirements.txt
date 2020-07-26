@@ -6,6 +6,9 @@ python-dotenv==0.14.0
 requests==2.24.0
 six==1.15.0
 tqdm==4.48.0
-urllib3==1.25.9
+urllib3==1.25.10
 websocket-client==0.57.0
 pandas==1.0.5
+cmd2==1.2.1
+colored==1.4.2
+gnureadline==8.0.0
