@@ -1,0 +1,202 @@
+"""
+This is an interactive command line application to interact with a Plex library with the
+main goal of managing smart playlists of music.
+"""
+__author__ = 'themcclure'
+__version__ = '1.0.0'
+
+import argparse
+import plexplay as px
+import colored as col
+from colored import stylize
+from typing import Dict, List
+from cmd2 import Cmd, with_argparser, with_category
+from dotenv import load_dotenv
+
+
+##########
+# setup some PlexCLI specifics
+category_main = 'Primary Commands'
+# def colorize(text: str, color: str) -> str:
+#     """
+#     Takes the given text, and the color argument and returns the string wrapped in ansi color codes.
+#     :param text:
+#     :param color:
+#     :return:
+#     """
+
+
+class PlexShell(Cmd):
+    context: dict = dict()
+
+    def __init__(self):
+        super().__init__(use_ipython=True)
+        self.self_in_py = True
+
+        # remove unneeded commands
+        self.disable_command('edit', 'This command has been disabled')
+        self.disable_command('run_pyscript', 'This command has been disabled')
+        self.disable_command('shell', 'This command has been disabled')
+        self.disable_command('shortcuts', 'This command has been disabled')
+
+        # hide dangerous commands
+        self.hidden_commands.append('py')
+        self.hidden_commands.append('ipy')
+
+        # Plex config
+        # TODO: Make this a Plex Library Context class
+        self.timer = px.Stopwatch()
+        self.timer.start()
+        load_dotenv()
+        load_only = px.get_from_env('PPLAY_LOAD_ONLY')
+        self.poutput(f"Loaded env in {self.timer.click():.2f}s")
+        self.perror()
+        self.plex_server = px.connect_to_server()
+        self.name = self.plex_server.friendlyName
+        self.music_lib = self.plex_server.library.section(px.get_from_env('PPLAY_MUSIC_LIBRARY'))
+        self.poutput(f"Connected to server in {self.timer.click():.2f}s")
+        self.context['active_artist'] = ''
+        # TODO: Make this a Plex Library Context class
+
+        # CMD2 config
+        self.intro = "Welcome to the PlexCLI Tool\nType help or ? for help.\n"
+        self.prompt = '> '
+
+    ####
+    # Utility methods
+    def update_prompt(self) -> None:
+        """Updates the prompt with new dynamic values"""
+        proto_prompt = f"{stylize(self.name, col.fg('green'))}"
+        self.prompt = f"{proto_prompt}> "
+
+    def get_playlist_list(self, arg_tokens: Dict[str, List[str]] = None) -> List[str]:
+        """Returns a list of playlists for the given library section, otherwise for the
+        active library section"""
+        target = self.context['library_section']
+        if arg_tokens:
+            if 'library_section' in arg_tokens:
+                target = arg_tokens['library_section'][0]
+            # TODO: flesh this all out and return something real
+            return list()
+
+    def get_album_list(self, arg_tokens: Dict[str, List[str]] = None) -> List[str]:
+        """Returns a list of albums for the given library section, otherwise for the
+        active artist"""
+        self.poutput(f"get_album_list: Found some args: {arg_tokens}")
+        if not self.music_lib:
+            self.perror(f"Music Library not loaded!")
+            return list()
+
+        target = self.context['active_artist']
+
+        if arg_tokens:
+            if 'artist_name' in arg_tokens:
+                target = arg_tokens['artist_name'][0]
+
+        return [a.title for a in self.music_lib.searchAlbums() if target.lower() in a.artist().title.lower()]
+
+    def get_artist_list(self, arg_tokens: Dict[str, List[str]] = None) -> List[str]:
+        """Returns a list of artists for the given library section, otherwise for the
+        active artist"""
+        self.poutput(f"get_artist_list: Found some args: {arg_tokens}")
+        if not self.music_lib:
+            self.perror(f"Music Library not loaded!")
+            return list()
+
+        target = self.context['active_artist']
+
+        if arg_tokens:
+            if 'artist' in arg_tokens:
+                target = arg_tokens['artist'][0]
+
+        return [a.title for a in self.music_lib.searchArtists() if target.lower() in a.title.lower()]
+
+    ####
+    # Cmd related methods
+    def preloop(self) -> None:
+        self.update_prompt()
+
+    def postloop(self) -> None:
+        self.poutput("Goodbye")
+
+    def do_quit(self, arg) -> bool:
+        """Quits the CLI Tool."""
+        return True
+
+    art_alb_track_parser = argparse.ArgumentParser()
+    art_alb_track_parser.add_argument('artist_name', type=str, nargs='?', choices_method=get_artist_list,
+                                      help='The Artist name (full or partial match)')
+    art_alb_track_parser.add_argument('album_name', type=str, nargs='?', choices_method=get_album_list,
+                                      help='The Album name (full or partial match)')
+    # validate_parser.add_argument('pdd_name', type=str, nargs='?', choices_method=get_pdd_list,
+    #                              help='The PDD name')
+
+    @with_category(category_main)
+    @with_argparser(art_alb_track_parser)
+    def do_select(self, arg=None) -> None:
+        """Select a particular track.
+        First argument is the Artist (tab completion)
+        Second argument is the Album (contextual tab completion)
+        """
+        timer = px.Stopwatch()
+
+        # Parse Artist args
+        if arg.artist_name and arg.artist_name in self.get_artist_list():
+            self.poutput(f"Found Artist {arg.artist_name}")
+            self.context['active_artist'] = arg.artist_name
+
+    #     # Parse phase args
+    #     if arg.phase_name and arg.phase_name == 'ALL':
+    #         phase_list = None
+    #     elif arg.phase_name:
+    #         phase_list = [arg.phase_name]
+    #     else:
+    #         if self.context['phase_name']:
+    #             phase_list = [self.context['phase_name']]
+    #         else:
+    #             self.poutput(f'Select a phase of the {proj_name} project:')
+    #             user_selection = self.select(['ALL'] + self.get_phase_list({'proj_name': proj_name}), 'Choice: ')
+    #             if user_selection == 'ALL':
+    #                 phase_list = None
+    #             else:
+    #                 phase_list = [user_selection]
+    #
+    #     # Parse PDD args
+    #     if not phase_list:
+    #         pdd_list = None
+    #     elif arg.pdd_name and arg.pdd_name == 'ALL':
+    #         pdd_list = None
+    #     elif arg.pdd_name:
+    #         pdd_list = [arg.pdd_name]
+    #     else:
+    #         if self.context['pdd_name']:
+    #             pdd_list = [self.context['pdd_name']]
+    #         else:
+    #             phase_name = phase_list[0]
+    #             self.poutput(f'Select a PDD of the {proj_name}/{phase_name} Phase:')
+    #             user_selection = self.select(['ALL'] + self.get_pdd_list({'proj_name': proj_name, 'phase_name': phase_name}), 'Choice: ')
+    #             if user_selection == 'ALL':
+    #                 pdd_list = self.get_pdd_list({'proj_name': proj_name, 'phase_name': phase_name})
+    #             else:
+    #                 pdd_list = [user_selection]
+    #
+    #     if not phase_list:
+    #         phase_list = self.get_phase_list({'proj_name': proj_name})
+    #     for phase_name in phase_list:
+    #         if not pdd_list:
+    #             pdd_list = self.get_pdd_list({'proj_name': proj_name, 'phase_name': phase_name})
+    #
+    #         for pdd_name in pdd_list:
+    #             self.poutput(f"Attempting to validate {proj_name}/{phase_name}/{pdd_name}")
+    #             if not check_mils_in_folder(self.mil_cfg, proj_name, phase_name, pdd_name):
+    #                 self.poutput(f"\033[1;31;40mFailed validation\033[0;0;0m {proj_name}/{phase_name}/{pdd_name}")
+    #         pdd_list = None
+    #
+    #     self.poutput(f"Finished Validation of {proj_name} in {timer.stop():.2f}s")
+
+
+if __name__ == '__main__':
+    pshell = PlexShell()
+    pshell.poutput(f"Running the PlexCLI in the {pshell.name.upper()} library (env setup & catalog load took {pshell.timer.click():.2f}s)")
+    pshell.cmdloop()
+    pshell.poutput(f"Exiting PlexCLI")
