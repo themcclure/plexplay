@@ -6,13 +6,25 @@ import datetime
 import logging
 
 from typing import List, Union
+from pathlib import Path
 
 
 def get_from_env(name: str, template_option: Union[int, str] = None) -> Union[int, str, List, None]:
     """
-    Fetches information from the environment.
+    Fetches information from the environment first, or from the .env file if it's set there.
+    The template option is for the following scenario:
+        for i in range(get_from_env('PPLAY_MIN_STARS'), get_from_env('PPLAY_MAX_STARS')):
+        temp_count = get_from_env('PPLAY_NUM_TMPL', i)
+    Where the value of PPLAY_NUM_TMPL is appended with the template_option argument, and then the resulting
+    string is then used as an environment variable to lookup. (eg PPLAY_NUM_5)
+
+    If the env variable:
+        - result contains a pipe (|) then it will be split on the pipe and returned as a list.
+        - result isnumeric() then it is returned as a number
+        - name contains DIR or FILE, then it will be returned as a Path()
+
     :param name: the name of the playlist
-    :param template_option: optional field used to populate a template based environment variable
+    :param template_option: optional field appended to a template based environment variable to derive a new env lookup
     :return: value from the environment, cast into int, str, or list (as needed)
     """
     item = os.getenv(name)
@@ -32,10 +44,9 @@ def get_from_env(name: str, template_option: Union[int, str] = None) -> Union[in
     elif item.isnumeric():
         # if it's a number, return it as an int
         item = int(item)
-    # FUTURE expansion:
-    # elif 'FILE' in name or 'DIR' in name:
-    #     # If it has file or dir in its name, then we treat it as a file or a directory and return a Pathlib object
-    #     item = Path(item)
+    elif 'FILE' in name or 'DIR' in name:
+        # If it has file or dir in its name, then we treat it as a file or a directory and return a Pathlib object
+        item = Path(item)
     return item
 
 
@@ -81,14 +92,14 @@ class Stopwatch(object):
             self._last_time = self._start_time
         return self.time()
 
-    def time(self, running=False):
+    def time(self, running_total=False):
         """
         Returns the time in seconds since the last click, or from the beginning if running is True.
         If the clock has stopped, then it measures until the stop time, otherwise it measures from now.
-        :param running: if True, returns a running total of time since start()
+        :param running_total: if True, returns a running total of time since start()
         :return: number of seconds
         """
-        if running:
+        if running_total:
             # measure the time since start()
             start_time = self._start_time
         else:
@@ -110,25 +121,26 @@ class Stopwatch(object):
         :return: raw average number of seconds (float), or a string with full information in it
         """
         if full:
-            return f"Total time: {self.time(running=True):.2f}, average time: {self.time(running=True)/self._click_count:.2f}, over {self._click_count} clicks."
+            return f"Total time: {self.time(running_total=True):.2f}, average time: " \
+                   f"{self.time(running_total=True) / self._click_count:.2f}, over {self._click_count} clicks."
         else:
-            return self.time(running=True)/self._click_count
+            return self.time(running_total=True) / self._click_count
 
 
-def get_logger():
-    """
-    Creates a new logger, or returns an existing one if it finds one in local or global scope.
-    :return: a logger object
-    """
-    # return an existing logger, if found in local scope
-    if 'logger' in locals():
-        return locals()['logger']
-    # return an existing logger, if found in global scope
-    if 'logger' in globals():
-        return globals()['logger']
-    # setup a new logger
-    log_format = '%(asctime)s:%(levelname)-3.3s:%(funcName)-16.16s:%(lineno)-3.3d: %(message)s'
-    logging.basicConfig(format=log_format, datefmt='%m/%d/%Y %H:%M:%S')
-    logger = logging.getLogger('PlexPlay')
-    logger.setLevel(get_from_env('PPLAY_LOG_LEVEL'))
-    return logger
+# def get_logger():
+#     """
+#     Creates a new logger, or returns an existing one if it finds one in local or global scope.
+#     :return: a logger object
+#     """
+#     # return an existing logger, if found in local scope
+#     if 'logger' in locals():
+#         return locals()['logger']
+#     # return an existing logger, if found in global scope
+#     if 'logger' in globals():
+#         return globals()['logger']
+#     # setup a new logger
+#     log_format = '%(asctime)s:%(levelname)-3.3s:%(funcName)-16.16s:%(lineno)-3.3d: %(message)s'
+#     logging.basicConfig(format=log_format, datefmt='%m/%d/%Y %H:%M:%S')
+#     logger = logging.getLogger('PlexPlay')
+#     logger.setLevel(get_from_env('PPLAY_LOG_LEVEL'))
+#     return logger

@@ -11,19 +11,12 @@ import colored as col
 from colored import stylize
 from typing import Dict, List
 from cmd2 import Cmd, with_argparser, with_category
-from dotenv import load_dotenv
 
 
 ##########
 # setup some PlexCLI specifics
 category_main = 'Primary Commands'
-# def colorize(text: str, color: str) -> str:
-#     """
-#     Takes the given text, and the color argument and returns the string wrapped in ansi color codes.
-#     :param text:
-#     :param color:
-#     :return:
-#     """
+plexcli_label = f"{stylize('Plex', col.fg('blue'))}CLI"
 
 
 class PlexShell(Cmd):
@@ -44,19 +37,17 @@ class PlexShell(Cmd):
         self.hidden_commands.append('ipy')
 
         # Plex config
-        # TODO: Make this a Plex Library Context class
         self.timer = px.Stopwatch()
         self.timer.start()
-        load_dotenv()
-        load_only = px.get_from_env('PPLAY_LOAD_ONLY')
-        self.poutput(f"Loaded env in {self.timer.click():.2f}s")
-        self.perror()
-        self.plex_server = px.connect_to_server()
-        self.name = self.plex_server.friendlyName
-        self.music_lib = self.plex_server.library.section(px.get_from_env('PPLAY_MUSIC_LIBRARY'))
-        self.poutput(f"Connected to server in {self.timer.click():.2f}s")
+        self.config = px.config
+        self.config.init_env()
+        self.name = px.config.name
+        self.load_only = px.config.load_only
+        self.logger = px.config.logger
+        self.logger.debug(f"Loaded env in {self.timer.click():.2f}s")
+        self.plex = px.server.PlexMusicLibrary(self.name, self.config)
+        self.logger.debug(f"Fully loaded music library in {self.timer.click():.2f}s")
         self.context['active_artist'] = ''
-        # TODO: Make this a Plex Library Context class
 
         # CMD2 config
         self.intro = "Welcome to the PlexCLI Tool\nType help or ? for help.\n"
@@ -98,18 +89,19 @@ class PlexShell(Cmd):
     def get_artist_list(self, arg_tokens: Dict[str, List[str]] = None) -> List[str]:
         """Returns a list of artists for the given library section, otherwise for the
         active artist"""
-        self.poutput(f"get_artist_list: Found some args: {arg_tokens}")
-        if not self.music_lib:
+        # self.poutput(f"get_artist_list: Found some args: {arg_tokens}")
+        if not self.plex:
             self.perror(f"Music Library not loaded!")
             return list()
 
         target = self.context['active_artist']
 
         if arg_tokens:
-            if 'artist' in arg_tokens:
-                target = arg_tokens['artist'][0]
+            if 'artist_name' in arg_tokens:
+                target = arg_tokens['artist_name'][0]
 
-        return [a.title for a in self.music_lib.searchArtists() if target.lower() in a.title.lower()]
+        # return [a.title for a in self.music_lib.searchArtists() if target.lower() in a.title.lower()]
+        return self.plex.get_artists(target)
 
     ####
     # Cmd related methods
@@ -123,11 +115,45 @@ class PlexShell(Cmd):
         """Quits the CLI Tool."""
         return True
 
+    # TODO: tab-complete on all music playlists but close gracefully on those we don't know how to build
+    # TODO: dynamically add args from config
+    update_parser = argparse.ArgumentParser()
+    update_parser.set_defaults(unrated=False, hyper=False)
+    unrated_sub = update_parser.add_subparsers()
+    unrated_parser = unrated_sub.add_parser('unrated', help="Manage the unrated playlist")
+    unrated_parser.set_defaults(unrated=True, hyper=False)
+    hyper_parser = unrated_sub.add_parser('hyper', help="Manage the Hyper-Mix playlist")
+    hyper_parser.set_defaults(unrated=False, hyper=True)
+
+    @with_category(category_main)
+    @with_argparser(update_parser)
+    def do_update(self, arg) -> None:
+        """Manage the playlists"""
+        timer = px.Stopwatch()
+        if arg.unrated:
+            # generate a sample platter of Unrated Mix tracks
+            playlist_name, playlist_tracks = px.generate_unrated_mix(self.plex.musicpd)
+        elif arg.hyper:
+            # generate the Hyper Shuffle playlist
+            playlist_name, playlist_tracks = px.generate_hyper_shuffle_mix(self.plex.musicpd)
+        else:
+            self.logger.info("No command was selected")
+            return
+
+        self.logger.debug(f"Generated {playlist_name} in {timer.click():.2f}s")
+        if not self.load_only:
+            px.change_playlist_content(self.plex.server, playlist_name, playlist_tracks)
+        message = f"Updated {playlist_name} in {timer.click():.2f}s"
+        self.logger.debug(message)
+        self.poutput(message)
+
     art_alb_track_parser = argparse.ArgumentParser()
-    art_alb_track_parser.add_argument('artist_name', type=str, nargs='?', choices_method=get_artist_list,
+    art_alb_track_parser.add_argument('artist_name', type=str.lower, nargs='?', choices_method=get_artist_list,
                                       help='The Artist name (full or partial match)')
-    art_alb_track_parser.add_argument('album_name', type=str, nargs='?', choices_method=get_album_list,
-                                      help='The Album name (full or partial match)')
+    # TODO: add track completion
+    # TODO: add a find/search function so we can find case insensitive results since auto-complete IS case sensitive
+    # art_alb_track_parser.add_argument('album_name', type=str, nargs='?', choices_method=get_album_list,
+    #                                   help='The Album name (full or partial match)')
     # validate_parser.add_argument('pdd_name', type=str, nargs='?', choices_method=get_pdd_list,
     #                              help='The PDD name')
 
@@ -197,6 +223,7 @@ class PlexShell(Cmd):
 
 if __name__ == '__main__':
     pshell = PlexShell()
-    pshell.poutput(f"Running the PlexCLI in the {pshell.name.upper()} library (env setup & catalog load took {pshell.timer.click():.2f}s)")
+    pshell.poutput(f"Running the {plexcli_label} in the {pshell.name.upper()} library (env setup & catalog load took "
+                   f"{pshell.timer.time(running_total=True):.2f}s)")
     pshell.cmdloop()
-    pshell.poutput(f"Exiting PlexCLI")
+    pshell.poutput(f"Exiting {plexcli_label}")

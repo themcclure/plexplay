@@ -1,7 +1,8 @@
 """
 Functions for reading and writing playlists on a Plex server
 """
-from .utils import get_from_env, Stopwatch, get_logger
+from .utils import Stopwatch
+from .config import config
 
 import random
 import pandas as pd
@@ -17,22 +18,23 @@ def get_all_tracks(plex: PlexServer) -> pd.DataFrame:
     """
     Connects to the given Plex Server and gets all the tracks from the music library (defined in the .env config file).
     It parses the list, removed duplicates and returns it as a DataFrame for further processing.
+
     :param plex: the PlexServer object
     :return: a list of Tracks, randomized
     """
     timer = Stopwatch()
     timer.start()
-    logger = get_logger()
-    headers = get_from_env('PPLAY_MUSIC_ATTRS_RAW')
+    logger = config.logger
+    headers = config.music_attrs_raw
 
-    musictracks = plex.library.section(get_from_env('PPLAY_MUSIC_LIBRARY')).searchTracks()
+    musictracks = plex.library.section(config.music_section).searchTracks()
     logger.debug(f"Fetched all {len(musictracks)} tracks in {timer.click():.2f}s")
 
     musicpd = pd.DataFrame([[getattr(i, j) for j in headers] for i in musictracks], columns=headers)
     logger.debug(f"Converted {len(musicpd)} raw tracks in {timer.click():.2f}s")
 
     # rename the columns to more human readable names
-    musicpd.columns = get_from_env('PPLAY_MUSIC_ATTRS_COOKED')
+    musicpd.columns = config.music_attrs_cooked
 
     # add the track object to the end
     musicpd = musicpd.assign(track=musictracks)
@@ -53,15 +55,16 @@ def generate_unrated_mix(musicpd: pd.DataFrame) -> Tuple[str, List[Track]]:
     The Unrated Mix Generator goes through the DataFrame of all tracks, selects the unrated tracks, rotating through a
     randomized list of Artists, getting one unrated Track at a time and, if it's not a duplicate, adding it to the list
     until the list reaches the desired size.
+
     :param musicpd: a DataFrame of unique tracks
     :return: a tuple of the Unrated Mix playlist name, and a list of Tracks (randomized)
     """
     timer = Stopwatch()
     timer.start()
-    logger = get_logger()
+    logger = config.logger
     tracks = set()
-    mix_size = get_from_env('PPLAY_UNRATED_SIZE')
-    mix_name = get_from_env('PPLAY_UNRATED_NAME')
+    mix_size = config.play_unrated_size
+    mix_name = config.play_unrated_name
 
     # check that the DataFrame has a ratings column, otherwise return an empty list
     if hasattr(musicpd, 'rating'):
@@ -81,7 +84,7 @@ def generate_unrated_mix(musicpd: pd.DataFrame) -> Tuple[str, List[Track]]:
         logger.debug(f"Found {len(albums)} albums with unrated tracks in {timer.click():.2f}s")
 
         # add a random track that doesn't already exist in the list to the list:
-        while len(tracks) <= mix_size:
+        while len(tracks) < mix_size:
             album = next(album_cycle)
             tracks.add(random.choice(temp_pd[temp_pd.album == album].track.tolist()))
             logger.debug(f"Added a track from {album} in {timer.click():.2f}s")
@@ -100,23 +103,26 @@ def generate_hyper_shuffle_mix(musicpd: pd.DataFrame) -> Tuple[str, List[Track]]
     """
     timer = Stopwatch()
     timer.start()
-    logger = get_logger()
+    logger = config.logger
     tracks = list()
-    multiplier = get_from_env('PPLAY_LOOKBACK_MULTIPLIER')
-    mix_name = get_from_env('PPLAY_HYPER_NAME')
+    multiplier = config.play_loopback_mult
+    mix_name = config.play_hyper_name
 
-    for i in range(get_from_env('PPLAY_MIN_STARS'), get_from_env('PPLAY_MAX_STARS')):
-        temp_count = get_from_env('PPLAY_NUM_TMPL', i)
+    for star, temp_count in config.play_hyper_sources.items():
         # TODO: get a slice that is unique on Album so that if an entire album is listened to end to end, it
-        #  doesn't just clump it together in the Hyper Shuffle
+        #  doesn't just clump it together in the Hyper Shuffle... this might be a config filter option
+        #  "one-per-album" then it can be filtered out of the musicpd set before we even split out the star ratings?
         # get the slice of the least recently listened to tracks
-        temp_list = musicpd[musicpd.rating == i].sort_values('lastviewed', na_position='first').iloc[:temp_count*multiplier].track.to_list()
-        if len(temp_list) > temp_count:
+        temp_list = musicpd[musicpd.rating == star].sort_values('lastviewed', na_position='first') \
+                    .iloc[:temp_count*multiplier].track.to_list()
+        # if this returns more than we need, select a random sample
+        if len(temp_list) >= temp_count:
             tracks += random.sample(temp_list, temp_count)
-            logger.debug(f"Added to Hyper Shuffle {temp_count} {i}* tracks in {timer.click():.2f}s")
+            logger.debug(f"Added to Hyper Shuffle {temp_count} {star}* tracks in {timer.click():.2f}s")
+        # otherwise, select all we got back
         else:
             tracks += temp_list
-            logger.debug(f"Added to Hyper Shuffle {len(temp_list)} {i}* tracks in {timer.click():.2f}s")
+            logger.debug(f"Added to Hyper Shuffle {len(temp_list)} {star}* tracks in {timer.click():.2f}s")
 
     # randomize the list
     random.shuffle(tracks)
@@ -135,7 +141,7 @@ def change_playlist_content(plex: PlexServer, name: str, tracks: List[Track]) ->
     """
     timer = Stopwatch()
     timer.start()
-    logger = get_logger()
+    logger = config.logger
 
     if not any([name == pl.title for pl in plex.playlists()]):
         playlist = plex.createPlaylist(name, tracks)
