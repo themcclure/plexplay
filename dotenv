@@ -1,0 +1,43 @@
+# User config
+PPLAY_TOKEN     = [[YOURPLEXTOKEN]]
+PPLAY_LOG_LEVEL = DEBUG
+#PPLAY_LOAD_ONLY = ON
+
+# In theory this should be passed through to the
+PLEXAPI_PLEXAPI_TIMEOUT = 10
+
+# Music library relaated
+PPLAY_SERVER_LIBRARY_LIST = GreatMachine:Music|Dragonstooth:Music
+PPLAY_SERVER             = GreatMachine
+PPLAY_MUSIC_LIBRARY      = Music
+PPLAY_MUSIC_ATTRS_RAW    = guid|title|parentTitle|grandparentTitle|userRating|viewCount|lastViewedAt
+PPLAY_MUSIC_ATTRS_COOKED = id|title|album|artist|rating|views|lastviewed
+
+
+####
+# Hyper Shuffle specific
+####
+PPLAY_HYPER_NAME = HyperShuffle
+
+# Max number of tracks to collect from each star rating for the Hyper Shuffle list
+PPLAY_NUM_TMPL = PPLAY_NUM_
+PPLAY_NUM_5    = 15
+PPLAY_NUM_4    = 60
+PPLAY_NUM_3    = 16
+PPLAY_NUM_2    = 6
+PPLAY_NUM_1    = 1
+PPLAY_NUM_0    = 2
+
+# To further randomize the spread of Tracks in the Hyper Shuffle Playlist, this multiplier is applied to the number of
+# desired entries in each playlist, and then randomly drawn from
+PPLAY_LOOKBACK_MULTIPLIER=6
+
+# Boundary limits
+PPLAY_MIN_STARS=0
+PPLAY_MAX_STARS=6
+
+####
+# Unrated Mix specific
+####
+PPLAY_UNRATED_SIZE = 100
+PPLAY_UNRATED_NAME = "Unrated Mix"
