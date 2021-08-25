@@ -23,7 +23,8 @@ class PlexShell(Cmd):
     context: dict = dict()
 
     def __init__(self):
-        super().__init__(use_ipython=True)
+        # super().__init__(use_ipython=True)
+        super().__init__(include_py=True)
         self.self_in_py = True
 
         # remove unneeded commands
@@ -148,7 +149,7 @@ class PlexShell(Cmd):
         self.poutput(message)
 
     art_alb_track_parser = argparse.ArgumentParser()
-    art_alb_track_parser.add_argument('artist_name', type=str.lower, nargs='?', choices_method=get_artist_list,
+    art_alb_track_parser.add_argument('artist_name', type=str.lower, nargs='?', choices_provider=get_artist_list,
                                       help='The Artist name (full or partial match)')
     # TODO: add track completion
     # TODO: add a find/search function so we can find case insensitive results since auto-complete IS case sensitive

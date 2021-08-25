@@ -69,7 +69,8 @@ def generate_unrated_mix(musicpd: pd.DataFrame) -> Tuple[str, List[Track]]:
     # check that the DataFrame has a ratings column, otherwise return an empty list
     if hasattr(musicpd, 'rating'):
         # find all the unrated tracks
-        temp_pd = musicpd[musicpd.rating == 0.0]
+        # temp_pd = musicpd[musicpd.rating == 0.0]
+        temp_pd = musicpd[musicpd.rating.isna()]
         logger.debug(f"Found {len(temp_pd)} unrated tracks in {timer.click():.2f}s")
 
         # if the unrated songs is smaller than the mix size, return it all
@@ -112,10 +113,17 @@ def generate_hyper_shuffle_mix(musicpd: pd.DataFrame) -> Tuple[str, List[Track]]
         # TODO: get a slice that is unique on Album so that if an entire album is listened to end to end, it
         #  doesn't just clump it together in the Hyper Shuffle... this might be a config filter option
         #  "one-per-album" then it can be filtered out of the musicpd set before we even split out the star ratings?
-        # get the slice of the least recently listened to tracks
-        temp_list = musicpd[musicpd.rating == star].sort_values('lastviewed', na_position='first') \
-                    .iloc[:temp_count*multiplier].track.to_list()
-        # if this returns more than we need, select a random sample
+
+        # create a slicer for the rating, note that rating 0 is recorded as NA not 0 anymore
+        if star == 0:
+            slicer = musicpd.rating.isna()
+        else:
+            slicer = musicpd.rating == star
+        # get the slice of the least recently listened to tracks, for this rating
+        temp_list = musicpd[slicer].sort_values('lastviewed', na_position='first') \
+            .iloc[:temp_count*multiplier].track.to_list()
+
+        # if there are more tracks than we need, select a random sample down to size
         if len(temp_list) >= temp_count:
             tracks += random.sample(temp_list, temp_count)
             logger.debug(f"Added to Hyper Shuffle {temp_count} {star}* tracks in {timer.click():.2f}s")
@@ -123,6 +131,12 @@ def generate_hyper_shuffle_mix(musicpd: pd.DataFrame) -> Tuple[str, List[Track]]
         else:
             tracks += temp_list
             logger.debug(f"Added to Hyper Shuffle {len(temp_list)} {star}* tracks in {timer.click():.2f}s")
+
+    # TODO: if we have fewer tracks than the target size, do we backfill?
+    #  or is that something we do above? Instead of
+    #       if len(temp_list) >= temp_count:
+    #  we could go with
+    #       if len(temp_list) + len(tracks) >= temp_count_running_total:
 
     # randomize the list
     random.shuffle(tracks)
